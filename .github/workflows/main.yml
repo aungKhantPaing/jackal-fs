@@ -30,6 +30,9 @@ jobs:
           name: my-artifact
           path: dist/
 
+      - name: Debug Build Output 
+        run: ls -la
+
   deploy:
     needs: build
     runs-on: ubuntu-latest
@@ -41,7 +44,7 @@ jobs:
         with:
           name: my-artifact
       - name: Deploy to GitHub Pages
-        uses: JamesIves/github-pages-deploy-action@4.1.0
+        uses: actions/deploy-pages@v2
         with:
           branch: main
           folder: dist/
