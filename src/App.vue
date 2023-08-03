@@ -16,7 +16,9 @@ async function connectWallet() {
 }
 
 const wallet = ref(null);
-const walletAddress = computed(() => wallet.value?.properties.jackalAccount.address);
+const walletAddress = computed(
+  () => wallet.value?.properties.jackalAccount.address,
+);
 const storage = ref(null);
 const fileIo = ref(null);
 async function initJackal() {
@@ -34,7 +36,11 @@ async function buyStorage() {
   // space in terabytes (min .001)
 
   // 2 TB for 1 year:
-  const buyResult = await storage.value.buyStorage(walletAddress.value, 6, 0.002);
+  const buyResult = await storage.value.buyStorage(
+    walletAddress.value,
+    6,
+    0.002,
+  );
   console.log({ buyResult });
   return buyResult;
 }
@@ -50,7 +56,9 @@ async function createRootFolder() {
   // await fileIo.value.generateInitialDirs(msg, listOfRootFolders);
 
   // after the first time, this code can be used instead. this will only create new root folders if they don't already exist
-  const newFolderCount = await fileIo.value.verifyFoldersExist(listOfRootFolders);
+  const newFolderCount = await fileIo.value.verifyFoldersExist(
+    listOfRootFolders,
+  );
   console.log({ newFolderCount });
 }
 
@@ -116,7 +124,9 @@ async function getFileFromJackl(fileMetaData) {
     isFolder: false,
   };
 
-  const fileHanlder = await fileIo.value.downloadFile(downloadDetails, { track: 0 });
+  const fileHanlder = await fileIo.value.downloadFile(downloadDetails, {
+    track: 0,
+  });
 
   const downloadedFile = fileHanlder.receiveBacon();
   console.log({ downloadedFile });
@@ -147,7 +157,9 @@ async function downloadFile(file) {
     </a>
   </div>
 
-  <button v-if="!wallet" type="button" @click="connectWallet">Connect Wallet</button>
+  <button v-if="!wallet" type="button" @click="connectWallet">
+    Connect Wallet
+  </button>
   <button v-else type="button">{{ walletAddress }}</button>
 
   <button v-if="wallet" @click="buyStorage">Buy storage</button>
