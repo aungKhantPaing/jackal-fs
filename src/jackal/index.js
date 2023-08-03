@@ -10,6 +10,8 @@ const walletConfig =
 
 walletConfig.selectedWallet = selectedWallet;
 
+console.log({ walletConfig });
+
 export default {
   walletConfig,
 };

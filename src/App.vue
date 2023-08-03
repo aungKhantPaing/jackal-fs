@@ -8,6 +8,7 @@ import {
   SecretsHandler,
 } from "jackal.js";
 import j from "./jackal";
+import FileItem from "./components/FileItem.vue";
 
 async function connectWallet() {
   await initJackal();
@@ -25,10 +26,22 @@ async function initJackal() {
   console.log({ storage: storage.value });
   fileIo.value = await FileIo.trackIo(wallet.value);
   console.log({ fileIo: fileIo.value });
+  getMyFiles();
 }
 
-const listOfRootFolders = ["Home"];
-const PARENT_FOLDER_NAME = "s/Home";
+async function buyStorage() {
+  // (Wallet address, duration in months (min 1),
+  // space in terabytes (min .001)
+
+  // 2 TB for 1 year:
+  const buyResult = await storage.value.buyStorage(walletAddress.value, 6, 0.002);
+  console.log({ buyResult });
+  return buyResult;
+}
+
+const sampleDir = "Home";
+const listOfRootFolders = [sampleDir];
+const PARENT_FOLDER_NAME = "s/" + sampleDir;
 async function createRootFolder() {
   // you can create as many root folders as you would like this way. Home is the dashboard default root directory.
 
@@ -47,7 +60,9 @@ function onFileInputChange(e) {
   filesToUpload.value = e.target.files;
 }
 async function onUpload() {
-  await uploadFile(filesToUpload[0]);
+  const uploadResult = await uploadFile(filesToUpload.value[0]);
+  console.log({ uploadResult });
+  return uploadResult;
 }
 async function uploadFile(file) {
   const parentFolderPath = PARENT_FOLDER_NAME;
@@ -55,41 +70,70 @@ async function uploadFile(file) {
   const handler = await FileUploadHandler.trackFile(file, parentFolderPath);
 
   const uploadList = {};
+  const uploadable = await handler.getForUpload();
   uploadList[file.name] = {
     data: null,
     exists: false,
     handler: handler,
     key: file.name,
-    uploadable: await handler.getForUpload(),
+    uploadable,
   };
-
-  return fileIo.value.staggeredUploadFiles(uploadList, parent, {
-    counter: 0,
-    complete: 0,
-  });
+  debugger;
+  const uploadResult = await fileIo.value
+    .staggeredUploadFiles(uploadList, parent, {
+      counter: 0,
+      complete: 0,
+    })
+    .then(getMyFiles);
+  console.log({ uploadResult });
+  return uploadResult;
 }
 
 const myFiles = ref([]);
 const myFilePaths = ref([]);
+const root = ref(null);
 async function getMyFiles() {
   const parentFolderPath = PARENT_FOLDER_NAME; // for example Dashboard's root folder path is s/Home
-  const parent = await fileIo.value.downloadFolder(parentFolderPath);
-  myFiles.value = parent.getChildFiles();
-  console.log({ myFiles: myFiles.value });
+  root.value = await fileIo.value.downloadFolder(parentFolderPath);
+  const childFiles = root.value.getChildFiles();
+  myFiles.value = Object.values(childFiles);
+  console.log({ myFiles: myFiles.value, root: root.value });
   // const pathOfFirstChild = parent.getMyChildPath(childrenFiles[0].name);
   // myFilePaths.value = childrenFiles.map((f) => parent.getMyChildPath(f.name));
 }
-async function downloadFile(filePath) {
+async function downloadJacklFile(fileMetaData) {
+  const file = await getFileFromJackl(fileMetaData);
+  downloadFile(file);
+}
+
+async function getFileFromJackl(fileMetaData) {
+  const filePath = root.value.getMyChildPath(fileMetaData.name);
+  console.log({ fileMetaData, filePath });
+  debugger;
   const downloadDetails = {
     rawPath: filePath, // manual complete file path OR pathOfFirstChild
-    owner: walletAddress, // JKL address of file owner
+    owner: walletAddress.value, // JKL address of file owner
     isFolder: false,
   };
 
   const fileHanlder = await fileIo.value.downloadFile(downloadDetails, { track: 0 });
 
-  const file = fileHanlder.receiveBacon();
-  console.log({ downloadedFile: file });
+  const downloadedFile = fileHanlder.receiveBacon();
+  console.log({ downloadedFile });
+  return downloadedFile;
+}
+
+async function downloadFile(file) {
+  const url = window.URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.style.display = "none";
+  a.href = url;
+  // the filename you want
+  a.download = file.name;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  // or you know, something with better UX...
 }
 </script>
 
@@ -106,6 +150,8 @@ async function downloadFile(filePath) {
   <button v-if="!wallet" type="button" @click="connectWallet">Connect Wallet</button>
   <button v-else type="button">{{ walletAddress }}</button>
 
+  <button v-if="wallet" @click="buyStorage">Buy storage</button>
+
   <div v-if="wallet" style="margin-top: 10px">
     <input type="file" multiple @change="onFileInputChange" />
     <button v-if="filesToUpload.length" @click="onUpload">Upload</button>
@@ -114,14 +160,18 @@ async function downloadFile(filePath) {
   <div v-if="wallet" style="margin-top: 10px">
     Files
     <button @click="getMyFiles">Refresh</button>
-    <div v-if="myFilePaths.length">
-      <div v-for="filePath in myFilePaths" :key="filePath">
-        <span>{{ filePath }}</span>
-        <button @click="downloadFile(filePath)">Download</button>
-      </div>
+    <div v-if="myFiles.length">
+      <FileItem
+        v-for="file in myFiles"
+        :key="filePath"
+        :file="file"
+        @download="downloadJacklFile(file)"
+      />
     </div>
     <div v-else>( Empty )</div>
   </div>
+
+  <a id="download-link" style="display: none"></a>
   <!-- <HelloWorld msg="Vite + Vue" /> -->
 </template>
 
