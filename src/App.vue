@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, inject, provide, ref } from "vue";
 import {
   WalletHandler,
   StorageHandler,
@@ -10,35 +10,66 @@ import {
 import j from "./jackal";
 import FileItem from "./components/FileItem.vue";
 
-async function connectWallet() {
-  await initJackal();
-  await createRootFolder();
+const loading = ref(false);
+
+async function init() {
+  try {
+    await connectWallet();
+    await initJackal();
+    await getMyFiles();
+  } catch (error) {
+    console.error(error);
+  } finally {
+    loading.value = false;
+  }
 }
 
 const wallet = ref(null);
 const walletAddress = computed(
   () => wallet.value?.properties.jackalAccount.address,
 );
+const hexWalletAddress = ref(null);
+const pubKey = ref(null);
+provide("walletAddress", walletAddress);
+async function connectWallet() {
+  loading.value = "Connecting wallet...";
+  try {
+    wallet.value = await WalletHandler.trackWallet(j.walletConfig, {});
+    hexWalletAddress.value = await wallet.value.getHexJackalAddress();
+    pubKey.value = await wallet.value.findPubKey(walletAddress.value);
+  } catch (error) {
+    console.error(error);
+  } finally {
+    loading.value = false;
+  }
+}
+
 const storage = ref(null);
 const fileIo = ref(null);
+const secretHandler = ref(null);
+provide("secretHandler", secretHandler);
 async function initJackal() {
-  wallet.value = await WalletHandler.trackWallet(j.walletConfig, {});
-  console.log({ wallet: wallet.value });
-  storage.value = await StorageHandler.trackStorage(wallet.value);
-  console.log({ storage: storage.value });
-  fileIo.value = await FileIo.trackIo(wallet.value);
-  console.log({ fileIo: fileIo.value });
-  getMyFiles();
+  loading.value = "Initalizing Jackal...";
+  try {
+    storage.value = await StorageHandler.trackStorage(wallet.value);
+    fileIo.value = await FileIo.trackIo(wallet.value);
+    secretHandler.value = await SecretsHandler.trackSecrets(wallet.value);
+    await createRootFolder();
+  } catch (error) {
+    console.error(error);
+  } finally {
+    loading.value = false;
+  }
 }
 
 async function buyStorage() {
   // (Wallet address, duration in months (min 1),
   // space in terabytes (min .001)
 
-  // 2 TB for 1 year:
+  // 2 GB for 1 month:
   const buyResult = await storage.value.buyStorage(
     walletAddress.value,
-    6,
+    1,
     0.002,
   );
   console.log({ buyResult });
@@ -98,29 +129,49 @@ async function uploadFile(file) {
 }
 
 const myFiles = ref([]);
-const myFilePaths = ref([]);
 const root = ref(null);
+provide("parentFolder", root);
 async function getMyFiles() {
-  const parentFolderPath = PARENT_FOLDER_NAME; // for example Dashboard's root folder path is s/Home
-  root.value = await fileIo.value.downloadFolder(parentFolderPath);
-  const childFiles = root.value.getChildFiles();
-  myFiles.value = Object.values(childFiles);
-  console.log({ myFiles: myFiles.value, root: root.value });
-  // const pathOfFirstChild = parent.getMyChildPath(childrenFiles[0].name);
-  // myFilePaths.value = childrenFiles.map((f) => parent.getMyChildPath(f.name));
-}
-async function downloadJacklFile(fileMetaData) {
-  const file = await getFileFromJackl(fileMetaData);
-  downloadFile(file);
+  loading.value = "Loading files...";
+  try {
+    const parentFolderPath = PARENT_FOLDER_NAME; // for example Dashboard's root folder path is s/Home
+    root.value = await fileIo.value.downloadFolder(parentFolderPath);
+    const childFiles = root.value.getChildFiles();
+    myFiles.value = Object.values(childFiles);
+    console.log({
+      myFiles: myFiles.value,
+      root: root.value,
+    });
+    // const pathOfFirstChild = parent.getMyChildPath(childrenFiles[0].name);
+    // myFilePaths.value = childrenFiles.map((f) => parent.getMyChildPath(f.name));
+  } catch (error) {
+    console.error(error);
+  } finally {
+    loading.value = false;
+  }
 }
 
-async function getFileFromJackl(fileMetaData) {
-  const filePath = root.value.getMyChildPath(fileMetaData.name);
-  console.log({ fileMetaData, filePath });
-  debugger;
+function onFileItemDownload(fileMetaData) {
+  const rawPath = root.value.getMyChildPath(fileMetaData.name);
+  downloadJacklFile({ owner: walletAddress.value, rawPath });
+}
+
+async function downloadJacklFile({ owner, rawPath }) {
+  loading.value === "Downloading file...";
+  try {
+    const file = await getFileFromJackl({ owner, rawPath });
+    downloadFile(file);
+  } catch (error) {
+    console.error(error);
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function getFileFromJackl({ owner, rawPath }) {
   const downloadDetails = {
-    rawPath: filePath, // manual complete file path OR pathOfFirstChild
-    owner: walletAddress.value, // JKL address of file owner
+    rawPath, // manual complete file path OR pathOfFirstChild
+    owner, // JKL address of file owner
     isFolder: false,
   };
 
@@ -145,59 +196,125 @@ async function downloadFile(file) {
   window.URL.revokeObjectURL(url);
   // or you know, something with better UX...
 }
+
+async function shareJacklFile({ file, walletAddressToShare }) {
+  loading.value = "Sharing...";
+  try {
+    const filePath = root.value.getMyChildPath(file.name);
+    const currentSharings = await storage.value.readSharing(
+      walletAddress,
+      walletAddressToShare,
+    );
+    const updatedSharings = {
+      ...currentSharings,
+      files: (currentSharings.files || []).concat(filePath),
+    };
+    console.log({ currentSharings, updatedSharings });
+    const savedSharings = await storage.value.saveSharing(
+      walletAddressToShare,
+      updatedSharings,
+    );
+    console.log({ savedSharings });
+  } catch (error) {
+    console.error(error);
+  } finally {
+    loading.value = false;
+  }
+  return savedSharings;
+}
+
+function copyClipboard(data) {
+  navigator.clipboard.writeText(data);
+}
+
+const sharedFilePath = ref(null);
+async function downloadSharedFile() {
+  const [owner, ...rawPaths] = String(sharedFilePath.value).split("/");
+  const rawPath = rawPaths.join("/");
+  console.log({ sharedFilePath: sharedFilePath.value, owner, rawPath });
+  downloadJacklFile({ owner, rawPath });
+  // const shareTracker = await secretHandler.value.readSharing(owner, rawPath);
+  // console.log({ shareTracker });
+}
 </script>
 
 <template>
-  <div>
+  <dialog class="absolute top-0" :open="loading">
+    <form method="dialog">
+      {{ loading }}
+    </form>
+  </dialog>
+  <div class="flex justify-center">
     <a href="https://jackalprotocol.com/" target="_blank">
-      <img src="./assets/jackal.svg" class="logo" alt="Vite logo" />
-    </a>
-    <a href="https://vuejs.org/" target="_blank">
-      <img src="./assets/vue.svg" class="logo vue" alt="Vue logo" />
-    </a>
-  </div>
-
-  <button v-if="!wallet" type="button" @click="connectWallet">
-    Connect Wallet
-  </button>
-  <button v-else type="button">{{ walletAddress }}</button>
-
-  <button v-if="wallet" @click="buyStorage">Buy storage</button>
-
-  <div v-if="wallet" style="margin-top: 10px">
-    <input type="file" multiple @change="onFileInputChange" />
-    <button v-if="filesToUpload.length" @click="onUpload">Upload</button>
-  </div>
-
-  <div v-if="wallet" style="margin-top: 10px">
-    Files
-    <button @click="getMyFiles">Refresh</button>
-    <div v-if="myFiles.length">
-      <FileItem
-        v-for="file in myFiles"
-        :key="filePath"
-        :file="file"
-        @download="downloadJacklFile(file)"
+      <img
+        src="./assets/jackal.svg"
+        class="h-32 p-6 transition duration-300 hover:drop-shadow-[0_0_2em_#646cffaa]"
+        alt="Vite logo"
       />
+    </a>
+    <!-- <a href="https://vuejs.org/" target="_blank">
+      <img
+        class="h-32 p-6 transition duration-300 hover:drop-shadow-[0_0_2em_#42b883aa]"
+        src="./assets/vue.svg"
+        alt="Vue logo"
+      />
+    </a> -->
+  </div>
+
+  <h1 class="mb-10 font-mono">jackal-fs</h1>
+
+  <button v-if="!wallet" type="button" @click="init()">Connect Wallet</button>
+  <div v-else class="flex justify-center space-x-2">
+    <!-- <div v-if="hexWalletAddress">{{ hexWalletAddress }}</div>
+    <div v-if="pubKey">{{ pubKey }}</div> -->
+    <span>{{ walletAddress }}</span>
+    <button v-if="wallet" class="text-xs" @click="buyStorage">
+      Buy storage
+    </button>
+  </div>
+
+  <div v-if="wallet" class="mt-[10px] space-y-5">
+    <div>
+      <input
+        id="file_upload"
+        name="file_upload"
+        type="file"
+        multiple
+        @change="onFileInputChange"
+      />
+      <button v-if="filesToUpload.length" @click="onUpload">Upload</button>
+    </div>
+  </div>
+
+  <div v-if="wallet" class="mt-[10px]">
+    <div class="flex justify-between align-middle">
+      Files
+      <button class="text-xs" @click="getMyFiles">Refresh</button>
+    </div>
+    <hr class="my-2 opacity-10" />
+    <div v-if="myFiles.length">
+      <div v-for="(file, i) in myFiles" :key="i">
+        <FileItem
+          class="my-2"
+          :file="file"
+          @download="onFileItemDownload"
+          @share="shareJacklFile"
+          @copy="copyClipboard"
+        />
+        <hr class="my-2 opacity-10" />
+      </div>
     </div>
     <div v-else>( Empty )</div>
+    <div class="flex justify-between">
+      <input
+        v-model="sharedFilePath"
+        type="text"
+        placeholder="jkl.../s/Home/..."
+      />
+      <button @click="downloadSharedFile" class="text-xs">Download</button>
+    </div>
   </div>
 
   <a id="download-link" style="display: none"></a>
   <!-- <HelloWorld msg="Vite + Vue" /> -->
 </template>
-
-<style scoped>
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #42b883aa);
-}
-</style>
