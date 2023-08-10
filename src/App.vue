@@ -9,6 +9,7 @@ import {
 } from "jackal.js";
 import j from "./jackal";
 import FileItem from "./components/FileItem.vue";
+import StoragePlan from "./components/StoragePlan.vue";
 
 const loading = ref(false);
 
@@ -52,6 +53,7 @@ async function initJackal() {
   loading.value = "Initalizing Jackal...";
   try {
     storage.value = await StorageHandler.trackStorage(wallet.value);
+    getStorageInfo(walletAddress.value);
     fileIo.value = await FileIo.trackIo(wallet.value);
     secretHandler.value = await SecretsHandler.trackSecrets(wallet.value);
     await createRootFolder();
@@ -62,15 +64,21 @@ async function initJackal() {
   }
 }
 
-async function buyStorage() {
+const storagePaidPlan = ref(null);
+const storagePaymentInfo = ref(null);
+async function getStorageInfo(address) {
+  storagePaidPlan.value = await storage.value.getPayData(address);
+  storagePaymentInfo.value = await storage.value.getStoragePaymentInfo(address);
+}
+
+async function buyStorage(durationInMonth = 1, spaceInTb = 0.001) {
   // (Wallet address, duration in months (min 1),
   // space in terabytes (min .001)
 
-  // 2 GB for 1 month:
   const buyResult = await storage.value.buyStorage(
     walletAddress.value,
-    1,
-    0.002,
+    durationInMonth,
+    spaceInTb,
   );
   console.log({ buyResult });
   return buyResult;
@@ -174,7 +182,6 @@ async function getFileFromJackl({ owner, rawPath }) {
     owner, // JKL address of file owner
     isFolder: false,
   };
-
   const fileHanlder = await fileIo.value.downloadFile(downloadDetails, {
     track: 0,
   });
@@ -215,12 +222,12 @@ async function shareJacklFile({ file, walletAddressToShare }) {
       updatedSharings,
     );
     console.log({ savedSharings });
+    return savedSharings;
   } catch (error) {
     console.error(error);
   } finally {
     loading.value = false;
   }
-  return savedSharings;
 }
 
 function copyClipboard(data) {
@@ -244,74 +251,84 @@ async function downloadSharedFile() {
       {{ loading }}
     </form>
   </dialog>
-  <div class="flex justify-center">
-    <a href="https://jackalprotocol.com/" target="_blank">
-      <img
-        src="./assets/jackal.svg"
-        class="h-32 p-6 transition duration-300 hover:drop-shadow-[0_0_2em_#646cffaa]"
-        alt="Vite logo"
-      />
-    </a>
-    <!-- <a href="https://vuejs.org/" target="_blank">
+  <div class="container w-[500px]">
+    <div class="flex justify-center">
+      <a href="https://jackalprotocol.com/" target="_blank">
+        <img
+          src="./assets/jackal.svg"
+          class="h-32 p-6 transition duration-300 hover:drop-shadow-[0_0_2em_#646cffaa]"
+          alt="Vite logo"
+        />
+      </a>
+      <!-- <a href="https://vuejs.org/" target="_blank">
       <img
         class="h-32 p-6 transition duration-300 hover:drop-shadow-[0_0_2em_#42b883aa]"
         src="./assets/vue.svg"
         alt="Vue logo"
       />
     </a> -->
-  </div>
+    </div>
 
-  <h1 class="mb-10 font-mono">jackal-fs</h1>
+    <h1 class="mb-10 font-mono">jackal-fs</h1>
 
-  <button v-if="!wallet" type="button" @click="init()">Connect Wallet</button>
-  <div v-else class="flex justify-center space-x-2">
-    <!-- <div v-if="hexWalletAddress">{{ hexWalletAddress }}</div>
+    <button v-if="!wallet" type="button" @click="init()">Connect Wallet</button>
+    <div v-else class="space-y-4">
+      <!-- <div v-if="hexWalletAddress">{{ hexWalletAddress }}</div>
     <div v-if="pubKey">{{ pubKey }}</div> -->
-    <span>{{ walletAddress }}</span>
-    <button v-if="wallet" class="text-xs" @click="buyStorage">
-      Buy storage
-    </button>
-  </div>
+      <div>{{ walletAddress }}</div>
+      <StoragePlan
+        :plan="storagePaidPlan"
+        :payment-info="storagePaymentInfo"
+        @buy="buyStorage"
+      ></StoragePlan>
+      <hr class="my-2 opacity-10" />
 
-  <div v-if="wallet" class="mt-[10px] space-y-5">
-    <div>
-      <input
-        id="file_upload"
-        name="file_upload"
-        type="file"
-        multiple
-        @change="onFileInputChange"
-      />
-      <button v-if="filesToUpload.length" @click="onUpload">Upload</button>
-    </div>
-  </div>
-
-  <div v-if="wallet" class="mt-[10px]">
-    <div class="flex justify-between align-middle">
-      Files
-      <button class="text-xs" @click="getMyFiles">Refresh</button>
-    </div>
-    <hr class="my-2 opacity-10" />
-    <div v-if="myFiles.length">
-      <div v-for="(file, i) in myFiles" :key="i">
-        <FileItem
-          class="my-2"
-          :file="file"
-          @download="onFileItemDownload"
-          @share="shareJacklFile"
-          @copy="copyClipboard"
-        />
-        <hr class="my-2 opacity-10" />
+      <div class="mt-[10px] flex justify-between">
+        Upload
+        <div>
+          <input
+            id="file_upload"
+            name="file_upload"
+            type="file"
+            multiple
+            class="text-xs"
+            @change="onFileInputChange"
+          />
+          <button v-if="filesToUpload.length" class="text-xs" @click="onUpload">
+            Upload
+          </button>
+        </div>
       </div>
-    </div>
-    <div v-else>( Empty )</div>
-    <div class="flex justify-between">
-      <input
-        v-model="sharedFilePath"
-        type="text"
-        placeholder="jkl.../s/Home/..."
-      />
-      <button @click="downloadSharedFile" class="text-xs">Download</button>
+      <hr class="my-2 opacity-10" />
+
+      <div class="mt-[10px]">
+        <div class="flex justify-between align-middle">
+          Files
+          <button class="text-xs" @click="getMyFiles">Refresh</button>
+        </div>
+        <hr class="my-2 opacity-10" />
+        <div v-if="myFiles.length">
+          <div v-for="(file, i) in myFiles" :key="i">
+            <FileItem
+              class="my-2"
+              :file="file"
+              @download="onFileItemDownload"
+              @share="shareJacklFile"
+              @copy="copyClipboard"
+            />
+            <hr class="my-2 opacity-10" />
+          </div>
+        </div>
+        <div v-else>( Empty )</div>
+        <div class="flex justify-between">
+          <input
+            v-model="sharedFilePath"
+            type="text"
+            placeholder="jkl.../s/Home/..."
+          />
+          <button @click="downloadSharedFile" class="text-xs">Download</button>
+        </div>
+      </div>
     </div>
   </div>
 

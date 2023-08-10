@@ -2,7 +2,7 @@
   <div>
     <div class="flex justify-between">
       <div class="text-left">
-        <div>
+        <div class="w-80 overflow-hidden text-ellipsis whitespace-nowrap">
           {{ file.name }}
           <!-- <a
             data-tooltip="Tooltip help here!"
@@ -12,7 +12,9 @@
             {{ file.name }}</a
           > -->
         </div>
-        <div class="text-xs text-gray-500">{{ fileSizeInMB }} MB</div>
+        <div class="text-xs text-gray-500">
+          {{ $formats.fileSize(file.size) }}
+        </div>
       </div>
       <div class="flex space-x-2">
         <button class="h-fit text-xs" @click="$emit('download', file)">

@@ -10,6 +10,8 @@
     "pretty": "prettier --write \"./**/*.{js,jsx,ts,tsx,json,vue}\""
   },
   "dependencies": {
+    "dayjs": "^1.11.9",
+    "filesize": "^10.0.9",
     "jackal.js": "^2.0.3",
     "vue": "^3.3.4"
   },
