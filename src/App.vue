@@ -25,19 +25,29 @@ async function init() {
   }
 }
 
+async function refresh() {
+  getMyFiles();
+  getStorageInfo(walletAddress.value);
+}
+
 const wallet = ref(null);
 const walletAddress = computed(
   () => wallet.value?.properties.jackalAccount.address,
 );
 const hexWalletAddress = ref(null);
 const pubKey = ref(null);
+async function getPubKey() {
+  pubKey.value = await wallet.value
+    .findPubKey(walletAddress.value)
+    .catch(console.error);
+}
 provide("walletAddress", walletAddress);
 async function connectWallet() {
   loading.value = "Connecting wallet...";
   try {
     wallet.value = await WalletHandler.trackWallet(j.walletConfig, {});
     hexWalletAddress.value = await wallet.value.getHexJackalAddress();
-    pubKey.value = await wallet.value.findPubKey(walletAddress.value);
+    await getPubKey();
   } catch (error) {
     console.error(error);
   } finally {
@@ -89,10 +99,12 @@ const listOfRootFolders = [sampleDir];
 const PARENT_FOLDER_NAME = "s/" + sampleDir;
 async function createRootFolder() {
   // you can create as many root folders as you would like this way. Home is the dashboard default root directory.
-
   // The first time a user connects, they must init the system
-  // const msg = storage.value.makeStorageInitMsg();
-  // await fileIo.value.generateInitialDirs(msg, listOfRootFolders);
+  if (!pubKey.value) {
+    const msg = storage.value.makeStorageInitMsg();
+    await fileIo.value.generateInitialDirs(msg, listOfRootFolders);
+    getPubKey();
+  }
 
   // after the first time, this code can be used instead. this will only create new root folders if they don't already exist
   const newFolderCount = await fileIo.value.verifyFoldersExist(
@@ -131,7 +143,7 @@ async function uploadFile(file) {
       counter: 0,
       complete: 0,
     })
-    .then(getMyFiles);
+    .then(refresh);
   console.log({ uploadResult });
   return uploadResult;
 }
@@ -304,7 +316,7 @@ async function downloadSharedFile() {
       <div class="mt-[10px]">
         <div class="flex justify-between align-middle">
           Files
-          <button class="text-xs" @click="getMyFiles">Refresh</button>
+          <button class="text-xs" @click="refresh">Refresh</button>
         </div>
         <hr class="my-2 opacity-10" />
         <div v-if="myFiles.length">

@@ -4,7 +4,9 @@ import dayjs from "dayjs";
 
 const props = defineProps(["plan", "paymentInfo"]);
 
-const hasPaidPlan = computed(() => !!props.plan && !!props.paymentInfo);
+const hasPaidPlan = computed(
+  () => !!props.paymentInfo && !!props.plan && props.plan.timeRemaining > 0,
+);
 
 const spaceAvailable = computed(
   () => hasPaidPlan.value && props.paymentInfo.spaceAvailable,
@@ -50,5 +52,7 @@ const spaceWidth = computed(() => {
       </div>
       <button class="text-xs" @click="$emit('buy')">Buy storage</button>
     </div>
+
+    <button v-else class="text-xs" @click="$emit('buy')">Buy storage</button>
   </div>
 </template>
