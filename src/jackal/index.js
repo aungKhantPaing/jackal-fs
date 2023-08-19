@@ -14,4 +14,5 @@ console.log({ walletConfig });
 
 export default {
   walletConfig,
+  isMainnet: walletConfig.chainConfig.chainId === "jackal-1",
 };

@@ -64,7 +64,10 @@ async function initJackal() {
   try {
     storage.value = await StorageHandler.trackStorage(wallet.value);
     getStorageInfo(walletAddress.value);
-    fileIo.value = await FileIo.trackIo(wallet.value);
+    fileIo.value = await FileIo.trackIo(
+      wallet.value,
+      j.isMainnet ? "1.0.x" : "1.1.x",
+    );
     secretHandler.value = await SecretsHandler.trackSecrets(wallet.value);
     await createRootFolder();
   } catch (error) {
