@@ -31,15 +31,11 @@ async function refresh() {
 }
 
 const wallet = ref(null);
-const walletAddress = computed(
-  () => wallet.value?.properties.jackalAccount.address,
-);
+const walletAddress = computed(() => wallet.value?.properties.jackalAccount.address);
 const hexWalletAddress = ref(null);
 const pubKey = ref(null);
 async function getPubKey() {
-  pubKey.value = await wallet.value
-    .findPubKey(walletAddress.value)
-    .catch(console.error);
+  pubKey.value = await wallet.value.findPubKey(walletAddress.value).catch(console.error);
 }
 provide("walletAddress", walletAddress);
 async function connectWallet() {
@@ -56,6 +52,7 @@ async function connectWallet() {
 }
 
 const storage = ref(null);
+provide("storage", storage);
 const fileIo = ref(null);
 const secretHandler = ref(null);
 provide("secretHandler", secretHandler);
@@ -64,10 +61,7 @@ async function initJackal() {
   try {
     storage.value = await StorageHandler.trackStorage(wallet.value);
     getStorageInfo(walletAddress.value);
-    fileIo.value = await FileIo.trackIo(
-      wallet.value,
-      j.isMainnet ? "1.0.x" : "1.1.x",
-    );
+    fileIo.value = await FileIo.trackIo(wallet.value, j.isMainnet ? "1.0.x" : "1.1.x");
     secretHandler.value = await SecretsHandler.trackSecrets(wallet.value);
     await createRootFolder();
   } catch (error) {
@@ -91,14 +85,14 @@ async function buyStorage(durationInMonth = 1, spaceInTb = 0.001) {
   const buyResult = await storage.value.buyStorage(
     walletAddress.value,
     durationInMonth,
-    spaceInTb,
+    spaceInTb
   );
   console.log({ buyResult });
   return buyResult;
 }
 
 const sampleDir = "Home";
-const listOfRootFolders = [sampleDir];
+const listOfRootFolders = [sampleDir, "Sharing"];
 const PARENT_FOLDER_NAME = "s/" + sampleDir;
 async function createRootFolder() {
   // you can create as many root folders as you would like this way. Home is the dashboard default root directory.
@@ -110,9 +104,7 @@ async function createRootFolder() {
   }
 
   // after the first time, this code can be used instead. this will only create new root folders if they don't already exist
-  const newFolderCount = await fileIo.value.verifyFoldersExist(
-    listOfRootFolders,
-  );
+  const newFolderCount = await fileIo.value.verifyFoldersExist(listOfRootFolders);
   console.log({ newFolderCount });
 }
 
@@ -197,6 +189,7 @@ async function getFileFromJackl({ owner, rawPath }) {
     owner, // JKL address of file owner
     isFolder: false,
   };
+  console.log({ downloadDetails });
   const fileHanlder = await fileIo.value.downloadFile(downloadDetails, {
     track: 0,
   });
@@ -223,10 +216,13 @@ async function shareJacklFile({ file, walletAddressToShare }) {
   loading.value = "Sharing...";
   try {
     const filePath = root.value.getMyChildPath(file.name);
-    const currentSharings = await storage.value.readSharing(
-      walletAddress,
-      walletAddressToShare,
-    );
+    console.log({
+      filePath,
+      owner: walletAddress.value,
+      shareTo: walletAddressToShare,
+    });
+    const currentSharings = await readSharing(walletAddress.value, walletAddressToShare);
+    console.log({ currentSharings });
     const updatedSharings = {
       ...currentSharings,
       files: (currentSharings.files || []).concat(filePath),
@@ -234,7 +230,7 @@ async function shareJacklFile({ file, walletAddressToShare }) {
     console.log({ currentSharings, updatedSharings });
     const savedSharings = await storage.value.saveSharing(
       walletAddressToShare,
-      updatedSharings,
+      updatedSharings
     );
     console.log({ savedSharings });
     return savedSharings;
@@ -243,6 +239,13 @@ async function shareJacklFile({ file, walletAddressToShare }) {
   } finally {
     loading.value = false;
   }
+}
+
+const addressToReadSharing = ref("");
+async function readSharing(owner, receiverAddress) {
+  const sharings = await storage.value.readSharing(owner, receiverAddress);
+  console.log({ sharings, owner, receiverAddress });
+  return sharings;
 }
 
 function copyClipboard(data) {
@@ -254,6 +257,7 @@ async function downloadSharedFile() {
   const [owner, ...rawPaths] = String(sharedFilePath.value).split("/");
   const rawPath = rawPaths.join("/");
   console.log({ sharedFilePath: sharedFilePath.value, owner, rawPath });
+  debugger;
   downloadJacklFile({ owner, rawPath });
   // const shareTracker = await secretHandler.value.readSharing(owner, rawPath);
   // console.log({ shareTracker });
@@ -336,12 +340,18 @@ async function downloadSharedFile() {
         </div>
         <div v-else>( Empty )</div>
         <div class="flex justify-between">
-          <input
-            v-model="sharedFilePath"
-            type="text"
-            placeholder="jkl.../s/Home/..."
-          />
+          <input v-model="sharedFilePath" type="text" placeholder="jkl.../s/Home/..." />
           <button @click="downloadSharedFile" class="text-xs">Download</button>
+        </div>
+        <div class="my-2"></div>
+        <div class="flex justify-between">
+          <input v-model="addressToReadSharing" type="text" placeholder="jkl..." />
+          <button
+            @click="readSharing(walletAddress, addressToReadSharing)"
+            class="text-xs"
+          >
+            Read Sharing
+          </button>
         </div>
       </div>
     </div>
